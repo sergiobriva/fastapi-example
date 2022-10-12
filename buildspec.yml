@@ -4,6 +4,7 @@ phases:
   install:
     runtime-versions:
       python: 3.8
+      java: corretto11
     commands:
       - pip install --upgrade awscli
       
@@ -15,6 +16,12 @@ phases:
     
     - pip install --no-cache-dir --upgrade -r requirements.txt
     - python -m unittest discover tests
+
+    - apt-get update
+    - apt-get install -y jq
+    - wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.7.0.2747-linux.zip
+    - unzip ./sonar-scanner-cli-4.7.0.2747-linux.zip
+    - export PATH=$PATH:./sonar-scanner-4.7.0.2747-linux/bin/
   
   build:
     on-failure: ABORT
@@ -23,6 +30,14 @@ phases:
     - echo Building the Docker image...
     - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
     - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+
+    - echo SONAR Integration started on `date`
+    - java --version
+    - sonar-scanner -Dsonar.organization=$SONARCLOUD_ORG -Dsonar.projectKey=$PROJECTKEY -Dsonar.sources=app -Dsonar.host.url=https://sonarcloud.io -Dsonar.login=$SONARCLOUD_TOKEN
+    - sleep 5
+    - curl https://sonarcloud.io/api/qualitygates/project_status?projectKey=$PROJECTKEY > analysis.json
+    - cat analysis.json
+    - if [ $(jq -r '.projectStatus.status' analysis.json) = ERROR ] ; then $CODEBUILD_BUILD_SUCCEEDING -eq 0 ;fi
 
   post_build:
     on-failure: ABORT
